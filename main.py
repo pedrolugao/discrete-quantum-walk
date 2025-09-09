@@ -9,13 +9,13 @@ from qiskit.visualization import plot_histogram
 
 from qiskit.quantum_info import Statevector
 
-def getGrade(node_index):
-    grade = 0
+def getDegree(node_index):
+    degree = 0
     for i in range(0, mat_size):
         if adj_matrix[node_index][i]:
-            grade += 1
+            degree += 1
     
-    return grade
+    return degree
 
 def isConnected(node_index, connection_id):
 
@@ -26,11 +26,11 @@ def isConnected(node_index, connection_id):
 
 def getAmplitude(node_index):
 
-    grade = getGrade(node_index)
+    degree = getDegree(node_index)
     amplitudes = []
     for i in range(0, num_connections): # Going through all the possibilities
         if isConnected(node_index, i):
-            amplitudes.append(1/np.sqrt(grade))
+            amplitudes.append(1/np.sqrt(degree))
         else:
             amplitudes.append(0)
 
@@ -110,7 +110,7 @@ def prepare():
 
                 print(node_binary + " " + connection_binary)
                 index = int(full_binary, 2)
-                amplitudes[index] = 1/np.sqrt(getGrade(node))
+                amplitudes[index] = 1/np.sqrt(getDegree(node))
 
 
     sqrt_n = np.sqrt(mat_size)
@@ -259,7 +259,7 @@ if __name__ == "__main__":
 
                 print(node_binary + " " + connection_binary)
                 index = int(full_binary, 2)
-                #amplitudes[index] = 1/np.sqrt(getGrade(node))
+                #amplitudes[index] = 1/np.sqrt(getDegree(node))
                 prob += abs(statevector[index]) ** 2
         probs.append(prob)
 
