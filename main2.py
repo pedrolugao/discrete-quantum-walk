@@ -22,9 +22,10 @@ def prepareCircuit():
         for connection in nodes[node]["connections"]:
             binary_node = bin(node)[2:].zfill(log_num_nodes)
             binary_connection = bin(connection)[2:].zfill(log_num_connections)
-
+            state = binary_node + binary_connection
+            state = state[::-1]
             #print(binary_node + " " + binary_connection)
-            index = int(binary_node + binary_connection, 2)
+            index = int(state, 2)
             amplitudes[index] = inverse_of_sqrt_degree
 
     inverse_of_sqrt_num_nodes = 1/np.sqrt(num_nodes)
@@ -45,7 +46,9 @@ def getAmplitudeOfNode(node):
         amplitudes.append(0)
 
     for connection in nodes[node]["connections"]:
-        amplitudes[connection] = inverse_of_sqrt_degree
+        connectionString = bin(connection)[2:].zfill(log_num_connections)
+        connectionString = connectionString[::-1]
+        amplitudes[int(connectionString,2)] = inverse_of_sqrt_degree
 
     return amplitudes
 
@@ -58,7 +61,7 @@ def addCoin(node):
     amplitudes = getAmplitudeOfNode(node)
 
     # Apply Si dagger
-    sub_qc_coin.prepare_state(amplitudes[::-1]).inverse()
+    sub_qc_coin.prepare_state(amplitudes).inverse()
 
     for i in range(0, log_num_connections):
         sub_qc_coin.x(i)
@@ -169,6 +172,7 @@ if __name__ == "__main__":
 
     qc = QuantumCircuit(qr_nodes, qr_connections, cr)
 
+    
     prepareCircuit()
 
     gates = []
@@ -176,7 +180,6 @@ if __name__ == "__main__":
     for node in range(num_nodes):
         addCoin(node)
 
-    #010011
 
     for connection in range(num_connections):
         addShift(connection)
@@ -208,33 +211,32 @@ if __name__ == "__main__":
     statevector = Statevector(qc)
     #print(statevector)
     
-    asa = statevector.probabilities_dict()
+    probabilidades = statevector.probabilities_dict()
     probs = []
 
     for node in range(num_nodes):
         prob = 0
-        for connection in nodes[node]["connections"]:
+        for connection in range(num_connections):
             binary_node = bin(node)[2:].zfill(log_num_nodes)
             binary_connection = bin(connection)[2:].zfill(log_num_connections)
 
             #print(binary_node + " " + binary_connection)
             a = binary_node + binary_connection
-            index = int(a, 2)
-            #amplitudes[index] = inverse_of_sqrt_degree
-            #print(a, abs(statevector[index] ** 2))
-            prob += asa[a[::-1]] if a[::-1] in asa else 0
+            a = a[::-1] #invertendo porque o qiskit considera tudo ao contrário
+            print(a, probabilidades[a] if a in probabilidades else 0)
+            prob += probabilidades[a] if a in probabilidades else 0
         probs.append(prob)
     plt.bar(range(num_nodes), probs)
     plt.show()
 
-    myKeys = list(asa.keys())
+    myKeys = list(probabilidades.keys())
     myKeys.sort()
 
     # Sorted Dictionary
-    sd = {i: asa[i] for i in myKeys}
+    sd = {i: probabilidades[i] for i in myKeys}
 
     plt.bar(range(len(sd)), list(sd.values()), align='center')
     plt.xticks(range(len(sd)), list(sd.keys()))
-    print(asa)
+    print(probabilidades)
     qc.draw(output="mpl")
     plt.show()
