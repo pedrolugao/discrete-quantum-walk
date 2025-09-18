@@ -206,7 +206,7 @@ if __name__ == "__main__":
 
     qc = QuantumCircuit(log_size + log_num_connections, log_size)
 
-    #prepare()
+    prepare()
 
     control_list_coin = range(log_size + log_num_connections)
     sub_control_list_coin = range(log_num_connections) # List of the controls to the CX gate inside the coin
@@ -221,16 +221,16 @@ if __name__ == "__main__":
 
     CXGate = XGate().control(log_num_connections-1)
 
-    for i in range(0, mat_size):
-        addCoin(i)
+    # for i in range(0, 1):
+    #     addCoin(i)
 
-    for i in range(0, num_connections):
-        addShift(i)
+    # for i in range(0, num_connections):
+    #     addShift(i)
 
     #qc.measure(range(log_size), range(log_size))
 
-    #qc.draw(output="mpl")
-    #plt.show()
+    qc.draw(output="mpl")
+    plt.show()
 
     #backend = StatevectorSimulator()
 
@@ -251,14 +251,14 @@ if __name__ == "__main__":
     for node in range(0, mat_size):
         prob = 0
         for connection in range(0, num_connections):
-            if (isConnected(node, connection)):
+            #if (isConnected(node, connection)):
                 
                 node_binary = bin(node)[2:].zfill(log_size)
                 connection_binary = bin(connection)[2:].zfill(log_num_connections)
                 full_binary = node_binary + connection_binary
-
-                print(node_binary + " " + connection_binary)
                 index = int(full_binary, 2)
+                print(node_binary + " " + connection_binary + " = " + str(abs(statevector[index]) ** 2))
+                
                 #amplitudes[index] = 1/np.sqrt(getDegree(node))
                 prob += abs(statevector[index]) ** 2
         probs.append(prob)
