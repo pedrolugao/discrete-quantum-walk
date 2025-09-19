@@ -1,5 +1,5 @@
 [project]
-name = "qc"
+name = "discrete-quantum-walk"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -8,5 +8,4 @@ dependencies = [
     "matplotlib>=3.10.6",
     "pylatexenc>=2.10",
     "qiskit>=2.1.2",
-    "qiskit-aer>=0.17.1",
 ]
