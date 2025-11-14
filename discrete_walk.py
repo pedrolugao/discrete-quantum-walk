@@ -207,6 +207,9 @@ class DiscreteTimeWalk:
 
     def simulate(self, steps : int, register_all_probabilities : bool, starting_node : int = -1, state_prep_list : list[float] = []) -> None:
 
+        if steps == 0:
+            raise ValueError("steps must be a positive integer")
+
         if state_prep_list != [] and starting_node != -1:
             raise ValueError("starting_node and state_prep_list are mutually exclusive, please choose one")
 
@@ -293,14 +296,106 @@ class DiscreteTimeWalk:
         plt.show()
 
 
+# TODO networkx bipartite draw function
 class BiCollabFiltering(DiscreteTimeWalk):
-    def simulate(self, steps, register_all_probabilities, starting_node = -1, state_prep_list = []) -> None:
-        if (steps == 0):
+
+    def __prepareCircuit(self, starting_parity : str) -> None:
+
+        if starting_parity == "even":
+            parity = 0
+        else:
+            parity = 1
+
+        amplitudes = []
+
+        num_possibilities = 2 ** (self.total_num_qubits)
+
+        nodes_used = 0
+
+        for i in range(num_possibilities):
+            amplitudes.append(0)
+
+        for node in range(self.num_nodes):
+
+            inverse_of_sqrt_degree = 1/np.sqrt(self._DiscreteTimeWalk__nodes[node]["degree"])
+
+            if node % 2 == parity:
+                nodes_used += 1
+                for connection in self._DiscreteTimeWalk__nodes[node]["connections"]:
+                    binary_node = bin(node)[2:].zfill(self.log_num_nodes)
+                    binary_connection = bin(connection)[2:].zfill(self.log_num_connections)
+                    state = binary_node + binary_connection
+                    amplitudes[int(state, 2)] = inverse_of_sqrt_degree
+
+        inverse_of_sqrt_num_nodes_used = 1/np.sqrt(nodes_used)
+
+        for i in range(num_possibilities):
+            if amplitudes[i] != 0: # mathematically doesn't make a difference but is prittier to print and skip some divisions and multiplications
+                amplitudes[i] *= inverse_of_sqrt_num_nodes_used
+
+        self.qc.prepare_state(amplitudes)
+
+    def simulate(self, steps : int, register_all_probabilities : bool, starting_node : int = -1, starting_parity : str = "none", state_prep_list : list[float] = []) -> None:
+
+        if steps == 0:
             raise ValueError("steps must be a positive integer")
 
-        super().simulate(2 * steps + 1, register_all_probabilities, starting_node, state_prep_list)
+        if starting_node == -1 and starting_parity == "none" and state_prep_list == []:
+            raise ValueError("Please choose a starting node or a parity, alternatively provide state preparation list")
 
-    
+
+        # Exclusivity handling
+        if state_prep_list != [] and starting_node != -1:
+            raise ValueError("starting_node and state_prep_list are mutually exclusive, please choose one")
+
+        if state_prep_list != [] and starting_parity != "none":
+            raise ValueError("starting_parity and state_prep_list are mutually exclusive, please choose one")
+
+        if starting_parity != "none" and starting_node != -1:
+            raise ValueError("starting_node and starting_parity are mutually exclusive, please choose one")
+
+
+
+        # Decided to simply ignore negative numbers, might change it in the future
+        if starting_node != -1 and starting_node >= 0:
+            if starting_node > self.num_nodes-1:
+                raise ValueError(f"starting_node must be between 0 and {self.num_nodes-1}")
+            self._DiscreteTimeWalk__prepareCircuitFromStartingNode(starting_node)
+
+        elif state_prep_list != []:
+            if len(state_prep_list) != 2 ** (self.total_num_qubits):
+                raise ValueError(f"state_prep_list must have {2 ** (self.total_num_qubits)} elements, one for each possible binary state")
+            self.qc.prepare_state(state_prep_list)
+
+        elif starting_parity != "even" and starting_parity != "odd":
+            raise ValueError("starting_parity must be 'even' or 'odd'")
+
+
+
+        else:
+            self.__prepareCircuit(starting_parity)
+
+        self.steps = steps
+
+        for node in range(self.num_nodes):
+            self._DiscreteTimeWalk__addCoin(node)
+
+        for connection in range(self.num_connections):
+            self._DiscreteTimeWalk__addShift(connection)
+
+        # Following the 2x+1 equation
+        for i in range(0, (2 * steps) + 1) :
+            for gate in range(len(self.gates)):
+                self.qc.append(self.gates[gate][0], self.gates[gate][1]) # Appending the gate (gates[gate][0]) to it's application list (gates[gate][1])
+
+            # Only register the probabilities if i is one of the values of the equation's domain
+            if register_all_probabilities and (i != 0 and i % 2 == 1):
+                self._DiscreteTimeWalk__getProbabilities()
+
+        if not register_all_probabilities:
+            self._DiscreteTimeWalk__getProbabilities()
+
+
 if __name__ == "__main__":
 
     #adj_matrix = [
