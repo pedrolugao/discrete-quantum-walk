@@ -395,6 +395,18 @@ class BiCollabFiltering(DiscreteTimeWalk):
         if not register_all_probabilities:
             self._DiscreteTimeWalk__getProbabilities()
 
+    # Really just a wrapper for the nx draw function, but it's good for simplicity and to maintain the lib self contained
+    def draw(self, show_labels : bool = True) -> None:
+
+        colors = []
+
+        for i in range(0, int(np.floor(self.num_nodes/2))):
+            colors.append("#d61c1c")
+        for i in range(int(np.floor(self.num_nodes/2)), self.num_nodes):
+            colors.append("#1f78b4")
+
+        nx.draw(self.networkx_graph, with_labels=show_labels, node_color=colors)
+        plt.show()
 
 if __name__ == "__main__":
 
