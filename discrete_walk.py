@@ -335,6 +335,8 @@ class BiCollabFiltering(DiscreteTimeWalk):
 
         self.qc.prepare_state(amplitudes)
 
+
+
     def simulate(self, steps : int, register_all_probabilities : bool, starting_node : int = -1, starting_parity : str = "none", state_prep_list : list[float] = []) -> None:
 
         if steps == 0:
@@ -395,6 +397,8 @@ class BiCollabFiltering(DiscreteTimeWalk):
         if not register_all_probabilities:
             self._DiscreteTimeWalk__getProbabilities()
 
+
+
     # Really just a wrapper for the nx draw function, but it's good for simplicity and to maintain the lib self contained
     def draw(self, show_labels : bool = True) -> None:
 
@@ -410,42 +414,42 @@ class BiCollabFiltering(DiscreteTimeWalk):
 
 if __name__ == "__main__":
 
-    #adj_matrix = [
-    #[0, 0, 1, 0, 0, 0, 0, 1],
-    #[0, 0, 0, 0, 1, 0, 0, 0],
-    #[1, 0, 0, 0, 1, 0, 1, 0],
-    #[0, 0, 0, 0, 1, 1, 0, 0],
-    #[0, 1, 1, 1, 0, 0, 0, 0],
-    #[0, 0, 0, 1, 0, 0, 0, 0],
-    #[0, 0, 1, 0, 0, 0, 0, 1],
-    #[1, 0, 0, 0, 0, 0, 1, 0]
-    #]
-
-    #adj_matrix = [
-    #    [0, 1, 1, 1],
-    #    [1, 0, 1, 0],
-    #    [1, 1, 0, 0],
-    #    [1, 0, 0, 0]
-    #]
-
-    #adj_matrix = [
-    #    [0, 1, 0, 1, 0],
-    #    [1, 0, 1, 0, 0],
-    #    [0, 1, 0, 0, 1],
-    #    [1, 0, 0, 0, 0],
-    #    [0, 1, 0, 0, 0]
-    #]
-
-    bipart = [
-    [0, 0, 0, 1, 1, 1],
-    [0, 0, 0, 0, 1, 1],
-    [0, 0, 0, 1, 0, 1],
-    [1, 0, 1, 0, 0, 0],
-    [1, 1, 0, 0, 0, 0],
-    [1, 1, 1, 0, 0, 0]
+    study_matrix = [
+        [0, 0, 1, 0, 0, 0, 0, 1],
+        [0, 0, 0, 0, 1, 0, 0, 0],
+        [1, 0, 0, 0, 1, 0, 1, 0],
+        [0, 0, 0, 0, 1, 1, 0, 0],
+        [0, 1, 1, 1, 0, 0, 0, 0],
+        [0, 0, 0, 1, 0, 0, 0, 0],
+        [0, 0, 1, 0, 0, 0, 0, 1],
+        [1, 0, 0, 0, 0, 0, 1, 0]
     ]
 
-    test = BiCollabFiltering(bipart)
-    test.simulate(2, False, 0)
+    simple_4x4 = [
+        [0, 1, 1, 1],
+        [1, 0, 1, 0],
+        [1, 1, 0, 0],
+        [1, 0, 0, 0]
+    ]
+
+    lattice_5x5 = [
+        [0, 1, 0, 1, 0],
+        [1, 0, 1, 0, 1],
+        [0, 1, 0, 1, 0],
+        [1, 0, 1, 0, 1],
+        [0, 1, 0, 1, 0]
+    ]
+
+    bipart = [
+        [0, 0, 0, 1, 1, 1],
+        [0, 0, 0, 0, 1, 1],
+        [0, 0, 0, 1, 0, 1],
+        [1, 0, 1, 0, 0, 0],
+        [1, 1, 0, 0, 0, 0],
+        [1, 1, 1, 0, 0, 0]
+    ]
+
+    test = DiscreteTimeWalk(study_matrix)
+    test.simulate(2, True, 0)
     test.plotProbabilities(True)
     test.draw()
