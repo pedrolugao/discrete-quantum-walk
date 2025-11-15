@@ -249,6 +249,9 @@ class DiscreteTimeWalk:
     # TODO(?) make this prettier
     def plotProbabilities(self, print_connection_mapping : bool) -> None:
 
+        if self.probabilities == []:
+            raise ValueError("No probabilities available")
+
         if len(self.probabilities) == 1: # In case of only registering the final probability
             plt.bar(range(self.num_nodes), self.probabilities[0])
 
@@ -294,6 +297,18 @@ class DiscreteTimeWalk:
 
         nx.draw(self.networkx_graph, with_labels=show_labels)
         plt.show()
+
+
+    def reset(self):
+        self.gates : list[list[int | list[int]]] = []
+
+        qr_nodes = QuantumRegister(self.log_num_nodes, 'q')
+        qr_connections = QuantumRegister(self.log_num_connections, 'l')
+        cr = ClassicalRegister(self.log_num_nodes, 'c')
+
+        self.probabilities : list[list[float]] = []
+        self.steps = 0
+        self.qc = QuantumCircuit(qr_connections, qr_nodes, cr)
 
 
 # TODO networkx bipartite draw function
@@ -451,5 +466,8 @@ if __name__ == "__main__":
 
     test = DiscreteTimeWalk(study_matrix)
     test.simulate(2, True, 0)
+    test.plotProbabilities(True)
+    test.reset()
+    test.simulate(1, True, 0)
     test.plotProbabilities(True)
     test.draw()
