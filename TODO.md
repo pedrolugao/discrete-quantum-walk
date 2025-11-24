@@ -8,7 +8,7 @@
 
 [x] Define some common graphs for testing and analysis
 
-[ ] Implement link prediction algorithm
+[x] Implement link prediction algorithm
 
 [ ] Implement community detection algorithm
 

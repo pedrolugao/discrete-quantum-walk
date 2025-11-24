@@ -1,9 +1,11 @@
-from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister
+from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister, transpile
 from qiskit.circuit.library.standard_gates import XGate
+from qiskit_aer import AerSimulator
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from matplotlib.colors import Normalize
+
 
 import networkx as nx
 
@@ -178,7 +180,7 @@ class DiscreteTimeWalk:
         self.gates.append([shift_gate, self.__application_list_shift])
 
 
-    # TODO find a way to optimize this
+    # TODO find a way to optimize this, THIS IS *****SLOW*****
     def __getProbabilities(self) -> None:
 
         sv = Statevector(self.qc)
@@ -202,6 +204,24 @@ class DiscreteTimeWalk:
             probability_list.append(prob)
 
         self.probabilities.append(probability_list)
+
+        """qc = self.qc.copy()
+        qc.measure_all()
+
+        shots = 1024#16384
+
+        sim_statevector = AerSimulator(method='statevector')
+        job_statevector = sim_statevector.run(transpile(qc, sim_statevector), shots=shots)
+        counts_statevector = job_statevector.result().get_counts()
+
+        probability_list : list[float] = []
+        probability_list = [0.0 for _ in range(self.num_nodes)]
+
+        for binary in counts_statevector:
+            node_bin = binary[:self.log_num_nodes]
+            probability_list[int(node_bin, 2)] += counts_statevector[binary] / shots
+
+        self.probabilities.append(probability_list)"""
 
 
 
@@ -299,7 +319,8 @@ class DiscreteTimeWalk:
         plt.show()
 
 
-    def reset(self):
+
+    def reset(self) -> None:
         self.gates : list[list[int | list[int]]] = []
 
         qr_nodes = QuantumRegister(self.log_num_nodes, 'q')
@@ -413,7 +434,6 @@ class BiCollabFiltering(DiscreteTimeWalk):
             self._DiscreteTimeWalk__getProbabilities()
 
 
-
     # Really just a wrapper for the nx draw function, but it's good for simplicity and to maintain the lib self contained
     def draw(self, show_labels : bool = True) -> None:
 
@@ -455,6 +475,14 @@ if __name__ == "__main__":
         [0, 1, 0, 1, 0]
     ]
 
+    connected = [
+        [0, 1, 1, 1, 1],
+        [1, 0, 1, 1, 1],
+        [1, 1, 0, 1, 1],
+        [1, 1, 1, 0, 1],
+        [1, 1, 1, 1, 0]
+    ]
+
     bipart = [
         [0, 0, 0, 1, 1, 1],
         [0, 0, 0, 0, 1, 1],
@@ -465,9 +493,5 @@ if __name__ == "__main__":
     ]
 
     test = DiscreteTimeWalk(study_matrix)
-    test.simulate(2, True, 0)
+    test.simulate(1, False)
     test.plotProbabilities(True)
-    test.reset()
-    test.simulate(1, True, 0)
-    test.plotProbabilities(True)
-    test.draw()
