@@ -64,6 +64,12 @@ class DiscreteTimeWalk:
         self.steps = 0
         self.qc = QuantumCircuit(qr_connections, qr_nodes, cr)
 
+        for node in range(self.num_nodes):
+            self.__addCoin(node)
+
+        for connection in range(self.num_connections):
+            self.__addShift(connection)
+
 
 
     def __prepareCircuit(self) -> None:
@@ -137,27 +143,25 @@ class DiscreteTimeWalk:
         binary_node = bin(node)[2:].zfill(self.log_num_nodes)
 
         sub_qc_coin = QuantumCircuit(self.log_num_connections)
-
+        
         amplitudes = self.__getAmplitudeOfNode(node)
 
-        # Apply Si dagger
         sub_qc_coin.prepare_state(amplitudes).inverse()
-
+        
         for i in range(0, self.log_num_connections):
             sub_qc_coin.x(i)
 
         sub_qc_coin.h(0)
         sub_qc_coin.append(self.__CXGate, self.__application_list_CXGate[::-1])
         sub_qc_coin.h(0)
-
+        
         for i in range(0, self.log_num_connections):
             sub_qc_coin.x(i)
 
-        # Apply Si
         sub_qc_coin.prepare_state(amplitudes)
-
+        
         coin_gate = sub_qc_coin.to_gate().control(self.log_num_nodes, label=f"C{node}", ctrl_state=binary_node)
-
+        
         self.gates.append([coin_gate, self.__application_list_coin])
 
 
@@ -183,7 +187,7 @@ class DiscreteTimeWalk:
     # TODO find a way to optimize this, THIS IS *****SLOW*****
     def __getProbabilities(self) -> None:
 
-        sv = Statevector(self.qc)
+        """sv = Statevector(self.qc)
         prob_dict = sv.probabilities_dict()
 
         probability_list : list[float] = []
@@ -203,17 +207,15 @@ class DiscreteTimeWalk:
 
             probability_list.append(prob)
 
-        self.probabilities.append(probability_list)
+        self.probabilities.append(probability_list)"""
 
-        """qc = self.qc.copy()
+        qc = self.qc.copy()
         qc.measure_all()
 
-        shots = 1024#16384
-
-        sim_statevector = AerSimulator(method='statevector')
-        job_statevector = sim_statevector.run(transpile(qc, sim_statevector), shots=shots)
+        shots = 16384
+        sim_statevector = AerSimulator(method='automatic')
+        job_statevector = sim_statevector.run(transpile(qc, sim_statevector, optimization_level=3), shots=shots)
         counts_statevector = job_statevector.result().get_counts()
-
         probability_list : list[float] = []
         probability_list = [0.0 for _ in range(self.num_nodes)]
 
@@ -221,7 +223,7 @@ class DiscreteTimeWalk:
             node_bin = binary[:self.log_num_nodes]
             probability_list[int(node_bin, 2)] += counts_statevector[binary] / shots
 
-        self.probabilities.append(probability_list)"""
+        self.probabilities.append(probability_list)
 
 
 
@@ -248,12 +250,6 @@ class DiscreteTimeWalk:
             self.__prepareCircuit()
 
         self.steps = steps
-
-        for node in range(self.num_nodes):
-            self.__addCoin(node)
-
-        for connection in range(self.num_connections):
-            self.__addShift(connection)
 
         for _ in range(0, steps):
             for gate in range(len(self.gates)):
@@ -491,6 +487,8 @@ if __name__ == "__main__":
         [1, 1, 0, 0, 0, 0],
         [1, 1, 1, 0, 0, 0]
     ]
+
+    #a = nx.gnp_random_graph(50, 0.3)
 
     test = DiscreteTimeWalk(study_matrix)
     test.simulate(1, False)
