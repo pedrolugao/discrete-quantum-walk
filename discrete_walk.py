@@ -356,8 +356,8 @@ class DiscreteQuantumWalk:
         self.qc = QuantumCircuit(qr_connections, qr_nodes, cr)
 
 
-""" # TODO networkx bipartite draw function
-class BiCollabFiltering(DiscreteTimeWalk):
+# TODO networkx bipartite draw function
+class BiCollabFiltering(DiscreteQuantumWalk):
 
     def __prepareCircuit(self, starting_parity : str) -> None:
 
@@ -368,7 +368,7 @@ class BiCollabFiltering(DiscreteTimeWalk):
 
         amplitudes = []
 
-        num_possibilities = 2 ** (self.total_num_qubits)
+        num_possibilities = 2 ** (self.num_qubits_total)
 
         nodes_used = 0
 
@@ -377,13 +377,13 @@ class BiCollabFiltering(DiscreteTimeWalk):
 
         for node in range(self.num_nodes):
 
-            inverse_of_sqrt_degree = 1/np.sqrt(self._DiscreteTimeWalk__nodes[node]["degree"])
+            inverse_of_sqrt_degree = 1/np.sqrt(self._DiscreteTimeWalk__nodes[node].degree)
 
             if node % 2 == parity:
                 nodes_used += 1
-                for connection in self._DiscreteTimeWalk__nodes[node]["connections"]:
-                    binary_node = bin(node)[2:].zfill(self.log_num_nodes)
-                    binary_connection = bin(connection)[2:].zfill(self.log_num_connections)
+                for connection in self._DiscreteTimeWalk__nodes[node].connected_nodes:
+                    binary_node = bin(node)[2:].zfill(self.num_qubits_nodes)
+                    binary_connection = bin(connection)[2:].zfill(self.num_qubits_connections)
                     state = binary_node + binary_connection
                     amplitudes[int(state, 2)] = inverse_of_sqrt_degree
 
@@ -394,8 +394,6 @@ class BiCollabFiltering(DiscreteTimeWalk):
                 amplitudes[i] *= inverse_of_sqrt_num_nodes_used
 
         self.qc.prepare_state(amplitudes)
-
-
 
     def simulate(self, steps : int, register_all_probabilities : bool, starting_node : int = -1, starting_parity : str = "none", state_prep_list : list[float] = []) -> None:
 
@@ -425,8 +423,8 @@ class BiCollabFiltering(DiscreteTimeWalk):
             self._DiscreteTimeWalk__prepareCircuitFromStartingNode(starting_node)
 
         elif state_prep_list != []:
-            if len(state_prep_list) != 2 ** (self.total_num_qubits):
-                raise ValueError(f"state_prep_list must have {2 ** (self.total_num_qubits)} elements, one for each possible binary state")
+            if len(state_prep_list) != 2 ** (self.num_qubits_total):
+                raise ValueError(f"state_prep_list must have {2 ** (self.num_qubits_total)} elements, one for each possible binary state")
             self.qc.prepare_state(state_prep_list)
 
         elif starting_parity != "even" and starting_parity != "odd":
@@ -457,7 +455,6 @@ class BiCollabFiltering(DiscreteTimeWalk):
         if not register_all_probabilities:
             self._DiscreteTimeWalk__getProbabilities()
 
-
     # Really just a wrapper for the nx draw function, but it's good for simplicity and to maintain the lib self contained
     def draw(self, show_labels : bool = True) -> None:
 
@@ -470,7 +467,7 @@ class BiCollabFiltering(DiscreteTimeWalk):
 
         nx.draw(self.networkx_graph, with_labels=show_labels, node_color=colors)
         plt.show()
- """
+
 if __name__ == "__main__":
 
     study_matrix = [
