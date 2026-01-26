@@ -1,4 +1,4 @@
-from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister, transpile
+from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister, transpile, generate_preset_pass_manager
 from qiskit.circuit.library.standard_gates import XGate
 from qiskit_aer import AerSimulator
 import numpy as np
@@ -11,7 +11,17 @@ import networkx as nx
 
 from qiskit.quantum_info import Statevector
 
-class DiscreteTimeWalk:
+class Node:
+    def __init__(self):
+        self.degree = 0
+        self.connected_nodes = []
+        
+class Connection:
+    def __init__(self, node_1 : int, node_2 : int):
+        self.node_1 = node_1
+        self.node_2 = node_2
+
+class DiscreteQuantumWalk:
 
     def __init__(self, graph : list[list[int]] | nx.Graph):
 
@@ -24,41 +34,46 @@ class DiscreteTimeWalk:
 
         self.adj_matrix = graph
         self.num_nodes = len(self.adj_matrix)
-        self.__nodes = {}
-        self.__connections : dict[str, int] = {}
+        self.__nodes = [Node() for _ in range(self.num_nodes)] # Initializing the node list
+        self.__connections = []
         self.num_connections = 0
-
-        for i in range(self.num_nodes):
-            self.__nodes[i] = {"degree": 0, "connections": []}
 
         for i in range(self.num_nodes):
             for j in range(i, self.num_nodes):
                 if (self.adj_matrix[i][j]):
-                    self.__connections[self.num_connections] = {"node1": i, "node2": j}
-                    self.__nodes[i]["degree"] += 1
-                    self.__nodes[i]["connections"].append(self.num_connections)
-                    self.__nodes[j]["degree"] += 1
-                    self.__nodes[j]["connections"].append(self.num_connections)
+
+                    self.__nodes[i].degree += 1
+                    self.__nodes[j].degree += 1
+
+                    self.__nodes[i].connected_nodes.append(self.num_connections)
+                    self.__nodes[j].connected_nodes.append(self.num_connections)
+
+                    self.__connections.append(Connection(i, j))
+
                     self.num_connections += 1
 
-        self.gates : list[list[int | list[int]]] = []
+        self.gates : list[list[int | list[int]]] = [] #TODO: take care of this
 
-        self.log_num_nodes = int(np.ceil(np.log2(self.num_nodes)))
+        self.num_qubits_nodes = int(np.ceil(np.log2(self.num_nodes)))
 
-        self.log_num_connections = int(np.ceil(np.log2(self.num_connections)))
+        self.num_qubits_connections = int(np.ceil(np.log2(self.num_connections)))
 
-        self.total_num_qubits = self.log_num_nodes + self.log_num_connections
+        self.num_qubits_total = self.num_qubits_nodes + self.num_qubits_connections
 
-        self.__CXGate = XGate().control(self.log_num_connections-1)
-        self.__application_list_CXGate = list(range(self.log_num_connections))
+        # The CX gate inside all coins
+        self.__CXGate = XGate().control(self.num_qubits_connections-1)
 
-        self.__application_list_coin = list(range(self.log_num_connections, self.total_num_qubits)) + list(range(self.log_num_connections))
+        # Application lists are lists of qubits indexes
+        # that tells the gate/coins/shift WHERE to place itself on the main circuit, along with which qubits are control qubits
+        self.__application_list_CXGate = list(range(self.num_qubits_connections))
 
-        self.__application_list_shift = list(range(self.total_num_qubits))
+        self.__application_list_coin = list(range(self.num_qubits_connections, self.num_qubits_total)) + list(range(self.num_qubits_connections))
 
-        qr_nodes = QuantumRegister(self.log_num_nodes, 'q')
-        qr_connections = QuantumRegister(self.log_num_connections, 'l')
-        cr = ClassicalRegister(self.log_num_nodes, 'c')
+        self.__application_list_shift = list(range(self.num_qubits_total))
+
+        qr_nodes = QuantumRegister(self.num_qubits_nodes, 'q')
+        qr_connections = QuantumRegister(self.num_qubits_connections, 'l')
+        cr = ClassicalRegister(self.num_qubits_total, 'c')
 
         self.probabilities : list[list[float]] = []
         self.steps = 0
@@ -70,124 +85,141 @@ class DiscreteTimeWalk:
         for connection in range(self.num_connections):
             self.__addShift(connection)
 
+    def __prepareCircuit(self):
 
+        """
+        Qiskit's prepare_state() recieves a list with probabilities. It treats the BINARY of index of the probability as the configuration of said probability
 
-    def __prepareCircuit(self) -> None:
+        for example:
+        * list = [1/sqrt(2), 0, 0, 1/sqrt(2)]
+        * qc.prepare_state(list)
 
-        amplitudes = []
+            in this case, Qiskit will prepare the circuit in such a way that it has a 1/2 chance of all qubits initialized as zero (00)
+            and a 1/2 chance that all qubits are initialized as 1 (11)
+            00 is 0 in binary, list[0] == 1/sqrt(2)
+            11 is 3 in binary, list[3] == 1/sqrt(2)
 
-        num_possibilities = 2 ** (self.total_num_qubits)
+            the final probability is 1/2 and not 1/sqrt(2) because it's getting the absolute value (norm) of a vector, where the formula is:
+            sqrt(a² + b² + c² + ... + n²) = 1
 
-        for i in range(num_possibilities):
-            amplitudes.append(0)
+        Whith that, this function checks all nodes and it's connections's ids, takes the binary of both, concatenates them to get the full state binary,
+        transforms that back into decimal to get a valid index and assigns the probablity at that index as 1/sqrt(num_connections_of_that_node), assuring
+        that the absolute value of all assigned values equals 1
+
+        With that done for all nodes, the final probability now stands at 1 * num_nodes, to counter-measure that, all items of the list are multiplied by
+        1/sqrt(num_nodes), finally assuring that the result of it all is a list that, when normalized, yields 1
+        """
+
+        num_possibilities = 2 ** self.num_qubits_total
+        amplitudes = [0 for _ in range(num_possibilities)]
 
         for node in range(self.num_nodes):
+            inverse_of_sqrt_degree = 1/np.sqrt(self.__nodes[node].degree)
 
-            inverse_of_sqrt_degree = 1/np.sqrt(self.__nodes[node]["degree"])
+            for connected_node in self.__nodes[node].connected_nodes:
 
-            for connection in self.__nodes[node]["connections"]:
-                binary_node = bin(node)[2:].zfill(self.log_num_nodes)
-                binary_connection = bin(connection)[2:].zfill(self.log_num_connections)
+                binary_node = bin(node)[2:].zfill(self.num_qubits_nodes)
+                binary_connection = bin(connected_node)[2:].zfill(self.num_qubits_connections)
+
                 state = binary_node + binary_connection
+
                 amplitudes[int(state, 2)] = inverse_of_sqrt_degree
 
         inverse_of_sqrt_num_nodes = 1/np.sqrt(self.num_nodes)
 
         for i in range(num_possibilities):
-            if amplitudes[i] != 0: # mathematically doesn't make a difference but is prittier to print and skip some divisions and multiplications
-                amplitudes[i] *= inverse_of_sqrt_num_nodes
+            amplitudes[i] *= inverse_of_sqrt_num_nodes
 
         self.qc.prepare_state(amplitudes)
 
+    # Basically the same function above but for only one node
+    def __prepareCircuitFromStartingNode(self, node : int):
 
-    # Basically the same function but without a for loop
-    def __prepareCircuitFromStartingNode(self, node : int) -> None:
+        num_possibilities = 2 ** self.num_qubits_total
+        amplitudes = [0 for _ in range(num_possibilities)]
 
-        amplitudes = []
+        inverse_of_sqrt_degree = 1/np.sqrt(self.__nodes[node].degree)
 
-        num_possibilities = 2 ** (self.total_num_qubits)
+        for connected_node in self.__nodes[node].connected_nodes:
 
-        for i in range(num_possibilities):
-            amplitudes.append(0)
-        
-        inverse_of_sqrt_degree = 1/np.sqrt(self.__nodes[node]["degree"])
+            binary_node = bin(node)[2:].zfill(self.num_qubits_nodes)
+            binary_connection = bin(connected_node)[2:].zfill(self.num_qubits_connections)
 
-        for connection in self.__nodes[node]["connections"]:
-                binary_node = bin(node)[2:].zfill(self.log_num_nodes)
-                binary_connection = bin(connection)[2:].zfill(self.log_num_connections)
-                state = binary_node + binary_connection
-                amplitudes[int(state, 2)] = inverse_of_sqrt_degree
+            state = binary_node + binary_connection
+
+            amplitudes[int(state, 2)] = inverse_of_sqrt_degree
 
         self.qc.prepare_state(amplitudes)
-
-
 
     def __getAmplitudeOfNode(self, node : int) -> list[float]:
 
         amplitudes = []
 
-        inverse_of_sqrt_degree = 1/np.sqrt(self.__nodes[node]["degree"])
+        inverse_of_sqrt_degree = 1/np.sqrt(self.__nodes[node].degree)
 
-        for i in range(2 ** self.log_num_connections):
+        for i in range(2 ** self.num_qubits_connections):
             amplitudes.append(0)
 
-        for connection in self.__nodes[node]["connections"]:
-            amplitudes[connection] = inverse_of_sqrt_degree
+        for connected_node in self.__nodes[node].connected_nodes:
+            amplitudes[connected_node] = inverse_of_sqrt_degree
 
         return amplitudes
 
+    def __addCoin(self, node : int):
 
+        # Source: https://arxiv.org/pdf/2408.15653
 
-    def __addCoin(self, node : int) -> None:
+        binary_node = bin(node)[2:].zfill(self.num_qubits_nodes)
 
-        binary_node = bin(node)[2:].zfill(self.log_num_nodes)
+        sub_qc_coin = QuantumCircuit(self.num_qubits_connections)
 
-        sub_qc_coin = QuantumCircuit(self.log_num_connections)
-        
         amplitudes = self.__getAmplitudeOfNode(node)
 
         sub_qc_coin.prepare_state(amplitudes).inverse()
-        
-        for i in range(0, self.log_num_connections):
+
+        for i in range(0, self.num_qubits_connections):
             sub_qc_coin.x(i)
 
         sub_qc_coin.h(0)
         sub_qc_coin.append(self.__CXGate, self.__application_list_CXGate[::-1])
         sub_qc_coin.h(0)
-        
-        for i in range(0, self.log_num_connections):
+
+        for i in range(0, self.num_qubits_connections):
             sub_qc_coin.x(i)
 
         sub_qc_coin.prepare_state(amplitudes)
-        
-        coin_gate = sub_qc_coin.to_gate().control(self.log_num_nodes, label=f"C{node}", ctrl_state=binary_node)
-        
+
+        coin_gate = sub_qc_coin.to_gate().control(self.num_qubits_nodes, label=f"C{node}", ctrl_state=binary_node, annotated=True)
+
         self.gates.append([coin_gate, self.__application_list_coin])
 
+    def __addShift(self, connection : int):
 
+        """
+        This function creates a gate that shifts from one node binary to another, for example:
+            A shift from node 3 to node 7 would be 011 -> 111
+            The only difference is in the first bit. Putting a X gate on the first bit serves as a switch from 3 to 7 and from 7 to 3. 
+        """
 
-    def __addShift(self, connection : int) -> None:
+        binary_connection = bin(connection)[2:].zfill(self.num_qubits_connections)
 
-        binary_connection = bin(connection)[2:].zfill(self.log_num_connections)
+        sub_qc_shift = QuantumCircuit(self.num_qubits_nodes)
 
-        sub_qc_shift = QuantumCircuit(self.log_num_nodes)
+        binary_node1 = bin(self.__connections[connection].node_1)[2:].zfill(self.num_qubits_nodes)[::-1] #getting little endian representation
+        binary_node2 = bin(self.__connections[connection].node_2)[2:].zfill(self.num_qubits_nodes)[::-1] #getting little endian representation
 
-        binary_node1 = bin(self.__connections[connection]["node1"])[2:].zfill(self.log_num_nodes)[::-1] #getting little endian representation
-        binary_node2 = bin(self.__connections[connection]["node2"])[2:].zfill(self.log_num_nodes)[::-1] #getting little endian representation
-
-        for qubit in range(self.log_num_nodes):
+        for qubit in range(self.num_qubits_nodes):
             if binary_node1[qubit] != binary_node2[qubit]:
                 sub_qc_shift.x(qubit)
 
-        shift_gate = sub_qc_shift.to_gate().control(self.log_num_connections, label=f"S{connection}", ctrl_state=binary_connection)
+        shift_gate = sub_qc_shift.to_gate().control(self.num_qubits_connections, label=f"S{connection}", ctrl_state=binary_connection)
 
         self.gates.append([shift_gate, self.__application_list_shift])
 
+    def __getProbabilities(self):
 
-    # TODO find a way to optimize this, THIS IS *****SLOW*****
-    def __getProbabilities(self) -> None:
+        sv = Statevector(self.qc)
 
-        """sv = Statevector(self.qc)
         prob_dict = sv.probabilities_dict()
 
         probability_list : list[float] = []
@@ -198,8 +230,8 @@ class DiscreteTimeWalk:
 
             for connection in range(self.num_connections):
 
-                binary_node = bin(node)[2:].zfill(self.log_num_nodes)
-                binary_connection = bin(connection)[2:].zfill(self.log_num_connections)
+                binary_node = bin(node)[2:].zfill(self.num_qubits_nodes)
+                binary_connection = bin(connection)[2:].zfill(self.num_qubits_connections)
 
                 full_binary = binary_node + binary_connection
 
@@ -207,15 +239,18 @@ class DiscreteTimeWalk:
 
             probability_list.append(prob)
 
-        self.probabilities.append(probability_list)"""
+        self.probabilities.append(probability_list)
 
-        qc = self.qc.copy()
+        """ qc = self.qc.copy()
         qc.measure_all()
 
-        shots = 16384
-        sim_statevector = AerSimulator(method='automatic')
-        job_statevector = sim_statevector.run(transpile(qc, sim_statevector, optimization_level=3), shots=shots)
+        shots = 1024
+        sim_statevector = AerSimulator(method='automatic', max_parallel_threads=0, statevector_parallel_threshold=1, max_parallel_experiments=0, max_parallel_shots=0)
+
+        job_statevector = sim_statevector.run(transpile(qc, sim_statevector, optimization_level=0), shots=shots)
+
         counts_statevector = job_statevector.result().get_counts()
+
         probability_list : list[float] = []
         probability_list = [0.0 for _ in range(self.num_nodes)]
 
@@ -223,11 +258,9 @@ class DiscreteTimeWalk:
             node_bin = binary[:self.log_num_nodes]
             probability_list[int(node_bin, 2)] += counts_statevector[binary] / shots
 
-        self.probabilities.append(probability_list)
+        self.probabilities.append(probability_list) """
 
-
-
-    def simulate(self, steps : int, register_all_probabilities : bool, starting_node : int = -1, state_prep_list : list[float] = []) -> None:
+    def simulate(self, steps : int, register_probabilities : bool , register_all_probabilities : bool, starting_node : int = -1, state_prep_list : list[float] = []):
 
         if steps == 0:
             raise ValueError("steps must be a positive integer")
@@ -242,8 +275,8 @@ class DiscreteTimeWalk:
             self.__prepareCircuitFromStartingNode(starting_node)
 
         elif state_prep_list != []:
-            if len(state_prep_list) != 2 ** (self.total_num_qubits):
-                raise ValueError(f"state_prep_list must have {2 ** (self.total_num_qubits)} elements, one for each possible binary state")
+            if len(state_prep_list) != 2 ** (self.num_qubits_total):
+                raise ValueError(f"state_prep_list must have {2 ** (self.num_qubits_total)} elements, one for each possible binary state")
             self.qc.prepare_state(state_prep_list)
 
         else:
@@ -255,15 +288,13 @@ class DiscreteTimeWalk:
             for gate in range(len(self.gates)):
                 self.qc.append(self.gates[gate][0], self.gates[gate][1]) # Appending the gate (gates[gate][0]) to it's application list (gates[gate][1])
 
-            if register_all_probabilities:
+            if register_all_probabilities and register_probabilities:
                 self.__getProbabilities()
 
-        if not register_all_probabilities:
+        if not register_all_probabilities and register_probabilities:
             self.__getProbabilities()
 
-
-    # TODO(?) make this prettier
-    def plotProbabilities(self, print_connection_mapping : bool) -> None:
+    def plotProbabilities(self, print_connection_mapping : bool):
 
         if self.probabilities == []:
             raise ValueError("No probabilities available")
@@ -303,32 +334,29 @@ class DiscreteTimeWalk:
         if print_connection_mapping:
             print("\n\t|NODE_1> <---[CONNECTION_ID]---> |NODE_2>\n")
             for i in range(self.num_connections):
-                print(f"|{self.__connections[i]["node1"]}> <---[{i} / {bin(i)[2:].zfill(self.log_num_connections)}]---> |{self.__connections[i]["node2"]}>")
+                print(f"|{self.__connections[i].node_1}> <---[{i} / {bin(i)[2:].zfill(self.num_qubits_connections)}]---> |{self.__connections[i].node_2}>")
 
         plt.show()
 
-
-    # Really just a wrapper for the nx draw function, but it's good for simplicity and to maintain the lib self contained
-    def draw(self, show_labels : bool = True) -> None:
+    def draw(self, show_labels : bool = True):
 
         nx.draw(self.networkx_graph, with_labels=show_labels)
         plt.show()
 
+    def reset(self):
 
-
-    def reset(self) -> None:
         self.gates : list[list[int | list[int]]] = []
 
-        qr_nodes = QuantumRegister(self.log_num_nodes, 'q')
-        qr_connections = QuantumRegister(self.log_num_connections, 'l')
-        cr = ClassicalRegister(self.log_num_nodes, 'c')
+        qr_nodes = QuantumRegister(self.num_qubits_nodes, 'q')
+        qr_connections = QuantumRegister(self.num_qubits_connections, 'l')
+        cr = ClassicalRegister(self.num_qubits_nodes, 'c')
 
         self.probabilities : list[list[float]] = []
         self.steps = 0
         self.qc = QuantumCircuit(qr_connections, qr_nodes, cr)
 
 
-# TODO networkx bipartite draw function
+""" # TODO networkx bipartite draw function
 class BiCollabFiltering(DiscreteTimeWalk):
 
     def __prepareCircuit(self, starting_parity : str) -> None:
@@ -442,7 +470,7 @@ class BiCollabFiltering(DiscreteTimeWalk):
 
         nx.draw(self.networkx_graph, with_labels=show_labels, node_color=colors)
         plt.show()
-
+ """
 if __name__ == "__main__":
 
     study_matrix = [
@@ -488,8 +516,7 @@ if __name__ == "__main__":
         [1, 1, 1, 0, 0, 0]
     ]
 
-    #a = nx.gnp_random_graph(50, 0.3)
-
-    test = DiscreteTimeWalk(study_matrix)
-    test.simulate(1, False)
+    a = nx.gnp_random_graph(15, 0.3)
+    test = DiscreteQuantumWalk(a)
+    test.simulate(1, True, False)
     test.plotProbabilities(True)
