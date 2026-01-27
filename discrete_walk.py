@@ -15,6 +15,7 @@ class Node:
     def __init__(self):
         self.degree = 0
         self.connected_nodes = []
+        self.connection_ids = []
         
 class Connection:
     def __init__(self, node_1 : int, node_2 : int):
@@ -45,8 +46,11 @@ class DiscreteQuantumWalk:
                     self.__nodes[i].degree += 1
                     self.__nodes[j].degree += 1
 
-                    self.__nodes[i].connected_nodes.append(self.num_connections)
-                    self.__nodes[j].connected_nodes.append(self.num_connections)
+                    self.__nodes[i].connected_nodes.append(j)
+                    self.__nodes[j].connected_nodes.append(i)
+
+                    self.__nodes[i].connection_ids.append(self.num_connections)
+                    self.__nodes[j].connection_ids.append(self.num_connections)
 
                     self.__connections.append(Connection(i, j))
 
@@ -116,10 +120,10 @@ class DiscreteQuantumWalk:
         for node in range(self.num_nodes):
             inverse_of_sqrt_degree = 1/np.sqrt(self.__nodes[node].degree)
 
-            for connected_node in self.__nodes[node].connected_nodes:
+            for connection_ids in self.__nodes[node].connection_ids:
 
                 binary_node = bin(node)[2:].zfill(self.num_qubits_nodes)
-                binary_connection = bin(connected_node)[2:].zfill(self.num_qubits_connections)
+                binary_connection = bin(connection_ids)[2:].zfill(self.num_qubits_connections)
 
                 state = binary_node + binary_connection
 
@@ -140,10 +144,10 @@ class DiscreteQuantumWalk:
 
         inverse_of_sqrt_degree = 1/np.sqrt(self.__nodes[node].degree)
 
-        for connected_node in self.__nodes[node].connected_nodes:
+        for connection_id in self.__nodes[node].connection_ids:
 
             binary_node = bin(node)[2:].zfill(self.num_qubits_nodes)
-            binary_connection = bin(connected_node)[2:].zfill(self.num_qubits_connections)
+            binary_connection = bin(connection_id)[2:].zfill(self.num_qubits_connections)
 
             state = binary_node + binary_connection
 
@@ -160,13 +164,14 @@ class DiscreteQuantumWalk:
         for i in range(2 ** self.num_qubits_connections):
             amplitudes.append(0)
 
-        for connected_node in self.__nodes[node].connected_nodes:
-            amplitudes[connected_node] = inverse_of_sqrt_degree
+        for connection_id in self.__nodes[node].connection_ids:
+            amplitudes[connection_id] = inverse_of_sqrt_degree
 
         return amplitudes
 
     def __addCoin(self, node : int):
 
+        # Generic grover diffusion operator
         # Source: https://arxiv.org/pdf/2408.15653
 
         binary_node = bin(node)[2:].zfill(self.num_qubits_nodes)
@@ -345,8 +350,6 @@ class DiscreteQuantumWalk:
 
     def reset(self):
 
-        self.gates : list[list[int | list[int]]] = []
-
         qr_nodes = QuantumRegister(self.num_qubits_nodes, 'q')
         qr_connections = QuantumRegister(self.num_qubits_connections, 'l')
         cr = ClassicalRegister(self.num_qubits_nodes, 'c')
@@ -354,6 +357,7 @@ class DiscreteQuantumWalk:
         self.probabilities : list[list[float]] = []
         self.steps = 0
         self.qc = QuantumCircuit(qr_connections, qr_nodes, cr)
+
 
 
 # TODO networkx bipartite draw function
@@ -377,13 +381,13 @@ class BiCollabFiltering(DiscreteQuantumWalk):
 
         for node in range(self.num_nodes):
 
-            inverse_of_sqrt_degree = 1/np.sqrt(self._DiscreteTimeWalk__nodes[node].degree)
+            inverse_of_sqrt_degree = 1/np.sqrt(self._DiscreteQuantumWalk__nodes[node].degree)
 
             if node % 2 == parity:
                 nodes_used += 1
-                for connection in self._DiscreteTimeWalk__nodes[node].connected_nodes:
+                for connection_id in self._DiscreteQuantumWalk__nodes[node].connection_ids:
                     binary_node = bin(node)[2:].zfill(self.num_qubits_nodes)
-                    binary_connection = bin(connection)[2:].zfill(self.num_qubits_connections)
+                    binary_connection = bin(connection_id)[2:].zfill(self.num_qubits_connections)
                     state = binary_node + binary_connection
                     amplitudes[int(state, 2)] = inverse_of_sqrt_degree
 
@@ -420,7 +424,7 @@ class BiCollabFiltering(DiscreteQuantumWalk):
         if starting_node != -1 and starting_node >= 0:
             if starting_node > self.num_nodes-1:
                 raise ValueError(f"starting_node must be between 0 and {self.num_nodes-1}")
-            self._DiscreteTimeWalk__prepareCircuitFromStartingNode(starting_node)
+            self._DiscreteQuantumWalk__prepareCircuitFromStartingNode(starting_node)
 
         elif state_prep_list != []:
             if len(state_prep_list) != 2 ** (self.num_qubits_total):
@@ -438,10 +442,10 @@ class BiCollabFiltering(DiscreteQuantumWalk):
         self.steps = steps
 
         for node in range(self.num_nodes):
-            self._DiscreteTimeWalk__addCoin(node)
+            self._DiscreteQuantumWalk__addCoin(node)
 
         for connection in range(self.num_connections):
-            self._DiscreteTimeWalk__addShift(connection)
+            self._DiscreteQuantumWalk__addShift(connection)
 
         # Following the 2x+1 equation
         for i in range(0, (2 * steps) + 1) :
@@ -450,10 +454,10 @@ class BiCollabFiltering(DiscreteQuantumWalk):
 
             # Only register the probabilities if i is one of the values of the equation's domain
             if register_all_probabilities and (i != 0 and i % 2 == 1):
-                self._DiscreteTimeWalk__getProbabilities()
+                self._DiscreteQuantumWalk__getProbabilities()
 
         if not register_all_probabilities:
-            self._DiscreteTimeWalk__getProbabilities()
+            self._DiscreteQuantumWalk__getProbabilities()
 
     # Really just a wrapper for the nx draw function, but it's good for simplicity and to maintain the lib self contained
     def draw(self, show_labels : bool = True) -> None:
@@ -514,6 +518,11 @@ if __name__ == "__main__":
     ]
 
     a = nx.gnp_random_graph(15, 0.3)
-    test = DiscreteQuantumWalk(a)
-    test.simulate(1, True, False)
-    test.plotProbabilities(True)
+    test_DiscreteWalk = DiscreteQuantumWalk(study_matrix)
+    test_DiscreteWalk.simulate(steps=1, register_probabilities=True, register_all_probabilities=False)
+    test_DiscreteWalk.plotProbabilities(True)
+""" 
+    test_BiCollab = BiCollabFiltering(bipart)
+    test_BiCollab.draw(True)
+    test_BiCollab.simulate(2, False, 0)
+    test_BiCollab.plotProbabilities(False) """
