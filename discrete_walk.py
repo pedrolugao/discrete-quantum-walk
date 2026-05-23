@@ -1,5 +1,6 @@
 from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister, transpile, generate_preset_pass_manager
 from qiskit.circuit.library.standard_gates import XGate
+from qiskit.circuit.library import UnitaryGate
 from qiskit_aer import AerSimulator
 import numpy as np
 import matplotlib.pyplot as plt
@@ -24,7 +25,7 @@ class Connection:
 
 class DiscreteQuantumWalk:
 
-    def __init__(self, graph : list[list[int]] | nx.Graph):
+    def __init__(self, graph : list[list[int]] | nx.Graph, coin_parameters : dict[int, list[float]] | None = None):
 
         if type(graph) == nx.Graph:
             self.networkx_graph = graph
@@ -64,6 +65,8 @@ class DiscreteQuantumWalk:
 
         self.num_qubits_total = self.num_qubits_nodes + self.num_qubits_connections
 
+        self.__coin_parameters : dict[int, np.ndarray] = {}
+
         # The CX gate inside all coins
         self.__CXGate = XGate().control(self.num_qubits_connections-1)
 
@@ -83,11 +86,97 @@ class DiscreteQuantumWalk:
         self.steps = 0
         self.qc = QuantumCircuit(qr_connections, qr_nodes, cr)
 
+        if coin_parameters is not None:
+            for node in coin_parameters:
+                self.__validateNodeIndex(node)
+                self.__coin_parameters[node] = self.__parseCoinParameters(node, coin_parameters[node])
+
+        self.__buildGates()
+
+    def __buildGates(self):
+        self.gates = []
+
         for node in range(self.num_nodes):
             self.__addCoin(node)
 
         for connection in range(self.num_connections):
             self.__addShift(connection)
+
+    def __validateNodeIndex(self, node : int):
+        if node < 0 or node > self.num_nodes-1:
+            raise ValueError(f"node must be between 0 and {self.num_nodes-1}")
+
+    def __parseCoinParameters(self, node : int, parameters : list[float]) -> np.ndarray:
+        dimension = self.__nodes[node].degree
+        expected_num_parameters = dimension ** 2
+
+        parsed_parameters = np.asarray(parameters, dtype=float)
+
+        if parsed_parameters.shape != (expected_num_parameters,):
+            raise ValueError(
+                f"coin parameters must have {expected_num_parameters} elements for a {dimension}x{dimension} coin matrix"
+            )
+
+        return parsed_parameters
+
+    def __buildCoinUnitaryFromParameters(self, node : int, parameters : np.ndarray) -> np.ndarray:
+        dimension = self.__nodes[node].degree
+
+        hermitian = np.zeros((dimension, dimension), dtype=complex)
+
+        parameter_index = 0
+
+        for i in range(dimension):
+            hermitian[i][i] = parameters[parameter_index]
+            parameter_index += 1
+
+        for i in range(dimension):
+            for j in range(i+1, dimension):
+                real_part = parameters[parameter_index]
+                imag_part = parameters[parameter_index + 1]
+                parameter_index += 2
+
+                hermitian[i][j] = real_part + (1j * imag_part)
+                hermitian[j][i] = real_part - (1j * imag_part)
+
+        eigenvalues, eigenvectors = np.linalg.eigh(hermitian)
+
+        diagonal_phase_matrix = np.diag(np.exp(1j * eigenvalues))
+
+        local_unitary = eigenvectors @ diagonal_phase_matrix @ eigenvectors.conj().T
+
+        full_dimension = 2 ** self.num_qubits_connections
+        full_unitary = np.eye(full_dimension, dtype=complex)
+        connection_ids = self.__nodes[node].connection_ids
+
+        for i, connection_i in enumerate(connection_ids):
+            for j, connection_j in enumerate(connection_ids):
+                full_unitary[connection_i][connection_j] = local_unitary[i][j]
+
+        return full_unitary
+
+    def setCoinParameters(self, node : int, parameters : list[float]):
+        self.__validateNodeIndex(node)
+
+        self.__coin_parameters[node] = self.__parseCoinParameters(node, parameters)
+        self.__buildGates()
+
+    def setCoinParametersByNode(self, coin_parameters : dict[int, list[float]]):
+        for node in coin_parameters:
+            self.__validateNodeIndex(node)
+            self.__coin_parameters[node] = self.__parseCoinParameters(node, coin_parameters[node])
+
+        self.__buildGates()
+
+    def clearCoinParameters(self, node : int = -1):
+        if node == -1:
+            self.__coin_parameters = {}
+        else:
+            self.__validateNodeIndex(node)
+            if node in self.__coin_parameters:
+                self.__coin_parameters.pop(node)
+
+        self.__buildGates()
 
     def __prepareCircuit(self):
 
@@ -171,30 +260,36 @@ class DiscreteQuantumWalk:
 
     def __addCoin(self, node : int):
 
-        # Generic grover diffusion operator
-        # Source: https://arxiv.org/pdf/2408.15653
-
         binary_node = bin(node)[2:].zfill(self.num_qubits_nodes)
 
-        sub_qc_coin = QuantumCircuit(self.num_qubits_connections)
+        if node in self.__coin_parameters:
+            unitary = self.__buildCoinUnitaryFromParameters(node, self.__coin_parameters[node])
+            coin_subgate = UnitaryGate(unitary, label=f"C{node}")
+        else:
+            # Generic grover diffusion operator
+            # Source: https://arxiv.org/pdf/2408.15653
 
-        amplitudes = self.__getAmplitudeOfNode(node)
+            sub_qc_coin = QuantumCircuit(self.num_qubits_connections)
 
-        sub_qc_coin.prepare_state(amplitudes).inverse()
+            amplitudes = self.__getAmplitudeOfNode(node)
 
-        for i in range(0, self.num_qubits_connections):
-            sub_qc_coin.x(i)
+            sub_qc_coin.prepare_state(amplitudes).inverse()
 
-        sub_qc_coin.h(0)
-        sub_qc_coin.append(self.__CXGate, self.__application_list_CXGate[::-1])
-        sub_qc_coin.h(0)
+            for i in range(0, self.num_qubits_connections):
+                sub_qc_coin.x(i)
 
-        for i in range(0, self.num_qubits_connections):
-            sub_qc_coin.x(i)
+            sub_qc_coin.h(0)
+            sub_qc_coin.append(self.__CXGate, self.__application_list_CXGate[::-1])
+            sub_qc_coin.h(0)
 
-        sub_qc_coin.prepare_state(amplitudes)
+            for i in range(0, self.num_qubits_connections):
+                sub_qc_coin.x(i)
 
-        coin_gate = sub_qc_coin.to_gate().control(self.num_qubits_nodes, label=f"C{node}", ctrl_state=binary_node, annotated=True)
+            sub_qc_coin.prepare_state(amplitudes)
+
+            coin_subgate = sub_qc_coin.to_gate()
+
+        coin_gate = coin_subgate.control(self.num_qubits_nodes, label=f"C{node}", ctrl_state=binary_node, annotated=True)
 
         self.gates.append([coin_gate, self.__application_list_coin])
 
